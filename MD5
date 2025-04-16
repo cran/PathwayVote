@@ -1,0 +1,13 @@
+38abf821b2b8da17c44601c0ad806f7b *DESCRIPTION
+4907d2ae4de7a496fe0d8ea61ccd20a5 *LICENSE
+3a881dfa206db9bbc8e54ef814d4df78 *NAMESPACE
+798e122a7ee2f2c5ea0145ab18c407e2 *R/eQTM-class.R
+599b03c562a920480106565819c5aa96 *R/pathway-vote.R
+c24c1c3a4511260e6ef6da7f5f3d8b2b *R/utils.R
+cb67112f053458f7647bcee804f3ff79 *man/create_eQTM.Rd
+b08b2e5dd91e282dfb358409f4808c3f *man/eQTM-class.Rd
+2fda900ab4d2f86470f72f7897f5f1c7 *man/getData.Rd
+d5cd699caecc16fb2abfa1cede7cc260 *man/getMetadata.Rd
+2b96f126fae32f06cd0d0b6855918b60 *man/pathway_vote.Rd
+100e57a2c93adfbb36623119b04ccbe2 *tests/testthat/simulation.R
+281fc72735715a2a5b472eff85e86f02 *tests/testthat/test-eQTM-class.R

@@ -1,0 +1,22 @@
+Package: PathwayVote
+Title: Robust Pathway Enrichment for DNA Methylation Studies Using
+        Ensemble Voting
+Version: 0.1.0
+Authors@R: c(person("Yinan", "Zheng", 
+                    email = "y-zheng@northwestern.edu", 
+                    role = c("aut", "cre"), 
+                    comment = c(ORCID = "0000-0002-2006-7320")))
+Description: Implements a robust, voting-based pathway enrichment method designed for DNA methylation data analysis. The algorithm allows the input of expression quantitative trait methylation (eQTM) data to aggregates pathway signals across multiple parameter settings, and selects pathways supported across combinations using a vote-pruning strategy.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Depends: R (>= 4.0.0)
+Imports: dplyr, org.Hs.eg.db, ReactomePA, clusterProfiler,
+        AnnotationDbi, methods, future, furrr, parallelly
+Suggests: testthat
+RoxygenNote: 7.3.2
+NeedsCompilation: no
+Packaged: 2025-04-12 16:30:36 UTC; y-zhe
+Author: Yinan Zheng [aut, cre] (<https://orcid.org/0000-0002-2006-7320>)
+Maintainer: Yinan Zheng <y-zheng@northwestern.edu>
+Repository: CRAN
+Date/Publication: 2025-04-16 14:20:12 UTC
