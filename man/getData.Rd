@@ -3,7 +3,7 @@
 \name{getData}
 \alias{getData}
 \alias{getData,eQTM-method}
-\title{Get eQTM Data}
+\title{Get expression quantitative trait methylation (eQTM) Data}
 \usage{
 getData(object)
 

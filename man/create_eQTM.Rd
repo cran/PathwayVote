@@ -2,7 +2,7 @@
 % Please edit documentation in R/eQTM-class.R
 \name{create_eQTM}
 \alias{create_eQTM}
-\title{Create an eQTM object}
+\title{Create an expression quantitative trait methylation (eQTM) object}
 \usage{
 create_eQTM(data, metadata = list())
 }
@@ -23,7 +23,7 @@ create_eQTM(data, metadata = list())
 An eQTM object.
 }
 \description{
-Create an eQTM object
+Create an expression quantitative trait methylation (eQTM) object
 }
 \examples{
 data <- data.frame(

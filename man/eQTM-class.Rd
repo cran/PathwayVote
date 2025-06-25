@@ -3,7 +3,7 @@
 \docType{class}
 \name{eQTM-class}
 \alias{eQTM-class}
-\title{eQTM Class}
+\title{Expression quantitative trait methylation (eQTM) Class}
 \description{
 A class to store eQTM data for pathway analysis. eQTM stands for Expression Quantitative Trait Methylation.
 }

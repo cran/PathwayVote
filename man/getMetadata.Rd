@@ -3,7 +3,7 @@
 \name{getMetadata}
 \alias{getMetadata}
 \alias{getMetadata,eQTM-method}
-\title{Get eQTM Metadata}
+\title{Get expression quantitative trait methylation (eQTM) Metadata}
 \usage{
 getMetadata(object)
 

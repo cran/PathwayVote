@@ -1,8 +1,7 @@
 #' @importFrom methods setClass setGeneric setMethod new validObject
 #' @importFrom AnnotationDbi mapIds
-#' @import dplyr
 
-#' @title eQTM Class
+#' @title Expression quantitative trait methylation (eQTM) Class
 #'
 #' @description A class to store eQTM data for pathway analysis. eQTM stands for Expression Quantitative Trait Methylation.
 #' @slot data A data.frame containing eQTM data with columns: cpg, statistics, p_value, distance, and at least one of entrez or ensembl.
@@ -52,7 +51,7 @@ setClass(
   }
 )
 
-#' @title Create an eQTM object
+#' @title Create an expression quantitative trait methylation (eQTM) object
 #'
 #' @param data A data.frame containing eQTM data with columns: cpg, statistics, p_value, distance, and at least one of entrez or ensembl.
 #' \describe{
@@ -115,7 +114,7 @@ create_eQTM <- function(data, metadata = list()) {
 
     n_missing <- sum(is.na(data$entrez))
     if (n_missing > 0) {
-      warning(sprintf("Entrez ID conversion failed for %d Ensembl IDs (%.2f%%).", n_missing, 100 * n_missing / nrow(data)))
+      message(sprintf("Entrez ID conversion failed for %d Ensembl IDs (%.2f%%).", n_missing, 100 * n_missing / nrow(data)))
     }
 
   } else if (all(is.na(data$ensembl)) && !all(is.na(data$entrez))) {
@@ -131,7 +130,7 @@ create_eQTM <- function(data, metadata = list()) {
 
     n_missing <- sum(is.na(data$ensembl))
     if (n_missing > 0) {
-      warning(sprintf("Ensembl ID conversion failed for %d Entrez IDs (%.2f%%).", n_missing, 100 * n_missing / nrow(data)))
+      message(sprintf("Ensembl ID conversion failed for %d Entrez IDs (%.2f%%).", n_missing, 100 * n_missing / nrow(data)))
     }
   } else {
     # Both provided: do nothing
@@ -143,7 +142,7 @@ create_eQTM <- function(data, metadata = list()) {
   return(eQTM_obj)
 }
 
-#' @title Get eQTM Data
+#' @title Get expression quantitative trait methylation (eQTM) Data
 #' @description Retrieve the eQTM data.frame from an eQTM object.
 #' @param object An eQTM object.
 #' @return A data.frame stored in the object.
@@ -151,7 +150,7 @@ create_eQTM <- function(data, metadata = list()) {
 #' @export
 NULL
 
-#' @title Get eQTM Metadata
+#' @title Get expression quantitative trait methylation (eQTM) Metadata
 #' @description Retrieve the metadata list from an eQTM object.
 #' @param object An eQTM object.
 #' @return A list containing metadata.

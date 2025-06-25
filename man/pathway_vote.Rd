@@ -2,90 +2,110 @@
 % Please edit documentation in R/pathway-vote.R
 \name{pathway_vote}
 \alias{pathway_vote}
-\title{Pathway Vote Algorithm for eQTM Data (Auto Parallel)}
+\title{Pathway Voting-Based Enrichment Analysis}
 \usage{
 pathway_vote(
   ewas_data,
   eQTM,
-  k_values,
-  stat_grid,
-  distance_grid,
-  overlap_threshold,
   databases = c("Reactome"),
-  rank_column = "p_value",
-  rank_decreasing = FALSE,
-  use_abs = FALSE,
-  prune_strategy = "cuberoot",
-  fixed_value = 3,
-  min_genes_per_hit = 3,
+  k_grid = NULL,
+  stat_grid = NULL,
+  distance_grid = NULL,
+  fixed_prune = NULL,
+  grid_size = 5,
+  min_genes_per_hit = 2,
+  overlap_threshold = 0.7,
   readable = FALSE,
   workers = NULL,
   verbose = FALSE
 )
 }
 \arguments{
-\item{ewas_data}{A data.frame with columns: cpg and a ranking column (e.g., p_value, score).}
+\item{ewas_data}{A data.frame containing CpG-level association results. The first column must contain CpG probe IDs,
+which will be matched against the eQTM object. The second column should contain a numeric ranking metric, such as a p-value, t-statistic, or
+feature importance score.}
 
-\item{eQTM}{An eQTM object containing eQTM data.}
+\item{eQTM}{An \code{eQTM} object containing CpG–gene linkage information, created by the \code{create_eQTM()} function. This object provides
+the CpG-to-gene mapping used for pathway inference.}
 
-\item{k_values}{A numeric vector of top k CpGs to select (e.g., c(10, 50, 100)).}
+\item{databases}{A character vector of pathway databases. Supporting: "Reactome", "KEGG", and "GO".}
 
-\item{stat_grid}{A numeric vector of statistics thresholds.}
+\item{k_grid}{A numeric vector of top-k CpGs used for gene set construction. If NULL, the grid is automatically inferred using a log-scaled range
+guided by the number of CpGs passing FDR < 0.05. Note: This requires that \code{ewas_data} contains raw p-values (second column) from an association analysis;
+for other metrics (e.g., t-statistic or importance scores), \code{k_grid} must be provided manually.}
 
-\item{distance_grid}{A numeric vector of distance thresholds.}
+\item{stat_grid}{A numeric vector of eQTM statistic thresholds. If NULL, generated based on quantiles of the observed distribution.}
 
-\item{overlap_threshold}{A numeric value for gene list overlap threshold.}
+\item{distance_grid}{A numeric vector of CpG-gene distance thresholds (in base pairs). If NULL, generated similarly.}
 
-\item{databases}{A character vector of pathway databases (e.g., "Reactome").}
+\item{fixed_prune}{Integer or NULL. Minimum number of votes to retain a pathway. If NULL, will use cuberoot(N) where N is the number of enrichment runs.}
 
-\item{rank_column}{A character string indicating which column in `ewas_data` to use for ranking.}
+\item{grid_size}{Integer. Number of values in each grid when auto-generating. Default is 5.}
 
-\item{rank_decreasing}{Logical. If TRUE (default), sorts CpGs from high to low based on `rank_column`.}
+\item{min_genes_per_hit}{Minimum number of genes (`Count`) a pathway must include to be considered. Default is 2.}
 
-\item{use_abs}{Logical. Whether to apply `abs()` to the ranking column before sorting CpGs.}
-
-\item{prune_strategy}{Character, either "cuberoot" or "fixed". If "cuberoot", the minimum vote support is computed as (N)^(1/3) where N is the number of enrichment combinations. If "fixed", uses the value provided by `fixed_value`.}
-
-\item{fixed_value}{Integer, used only if `prune_strategy = "fixed"`.}
-
-\item{min_genes_per_hit}{Minimum number of genes (`Count`) a pathway must include to be considered.}
+\item{overlap_threshold}{Numeric between 0 and 1. Controls the maximum allowed Jaccard similarity between gene lists during redundancy filtering.
+Defualt is 0.7, which provides robust and stable results across a variety of simulation scenarios.}
 
 \item{readable}{Logical. whether to convert Entrez IDs to gene symbols in enrichment results.}
 
-\item{workers}{Optional integer. Number of parallel workers. If NULL, use 2 logical cores by default.}
+\item{workers}{Optional integer. Number of parallel workers. If NULL, use 2 logical cores.}
 
 \item{verbose}{Logical. whether to print progress messages.}
 }
 \value{
-A named list of data.frames, each containing enrichment results (pathway ID, p.adjust, Description, geneID) for one database (e.g., Reactome, KEGG).
+A named list of data.frames, each corresponding to a selected pathway database
+(e.g., `Reactome`, `KEGG`, `GO`). Each data.frame contains enriched pathways with
+columns: `ID`, `p.adjust`, `Description`, and `geneID`.
 }
 \description{
-Performs pathway enrichment analysis using a voting-based approach on eQTM data.
+Performs pathway enrichment analysis using a voting-based framework that integrates
+CpG–gene regulatory information from expression quantitative trait methylation (eQTM) data.
+For a grid of top-ranked CpGs and filtering thresholds, gene sets are generated and refined using
+an entropy-based pruning strategy that balances information richness, stability, and probe bias correction.
+In particular, gene lists dominated by genes with disproportionately high numbers of CpG mappings
+are penalized to mitigate active probe bias—a common artifact in methylation data analysis.
+Enrichment results across parameter combinations are then aggregated using a voting scheme,
+prioritizing pathways that are consistently recovered under diverse settings and robust to parameter perturbations.
 }
 \examples{
-data <- data.frame(
-  cpg = c("cg000001", "cg000002", "cg000003"),
-  statistics = c(2.5, -1.8, 3.2),
-  p_value = c(0.01, 0.03, 0.005),
-  distance = c(50000, 80000, 30000),
-  entrez = c("673", "1956", "5290")
+set.seed(123)
+
+# Simulated EWAS result: a mix of signal and noise
+n_cpg <- 500
+ewas <- data.frame(
+  cpg = paste0("cg", sprintf("\%08d", 1:n_cpg)),
+  p_value = c(runif(n_cpg*0.1, 1e-9, 1e-5), runif(n_cpg*0.2, 1e-3, 0.05), runif(n_cpg*0.7, 0.05, 1))
 )
-eqtm_obj <- create_eQTM(data)
-\donttest{
+
+# Corresponding eQTM mapping (some of these CpGs have gene links)
+signal_genes <- c("5290", "673", "1956", "7157", "7422")
+background_genes <- as.character(1000:9999)
+entrez_signal <- sample(signal_genes, n_cpg * 0.1, replace = TRUE)
+entrez_background <- sample(setdiff(background_genes, signal_genes), n_cpg * 0.9, replace = TRUE)
+
+eqtm_data <- data.frame(
+  cpg = ewas$cpg,
+  statistics = rnorm(n_cpg, mean = 2, sd = 1),
+  p_value = runif(n_cpg, min = 0.001, max = 0.05),
+  distance = sample(1000:100000, n_cpg, replace = TRUE),
+  entrez = c(entrez_signal, entrez_background),
+  stringsAsFactors = FALSE
+)
+eqtm_obj <- create_eQTM(eqtm_data)
+
+# Run pathway voting with minimal settings
+\dontrun{
 results <- pathway_vote(
-  ewas_data = data,
+  ewas_data = ewas,
   eQTM = eqtm_obj,
-  k_values = c(2),
-  stat_grid = c(1.5),
-  distance_grid = c(1e5),
-  overlap_threshold = 0.3,
-  databases = c("KEGG"),
-  rank_column = "p_value",
-  rank_decreasing = FALSE,
-  use_abs = FALSE,
-  worker = 1, # If not specified, will use 2 cores by default
-  verbose = FALSE
+  databases = c("GO", "KEGG", "Reactome"),
+  readable = TRUE,
+  verbose = TRUE
 )
+head(results$GO)
+head(results$KEGG)
+head(results$Reactome)
 }
 
 }

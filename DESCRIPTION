@@ -1,22 +1,22 @@
 Package: PathwayVote
 Title: Robust Pathway Enrichment for DNA Methylation Studies Using
         Ensemble Voting
-Version: 0.1.0
+Version: 0.1.1
 Authors@R: c(person("Yinan", "Zheng", 
                     email = "y-zheng@northwestern.edu", 
                     role = c("aut", "cre"), 
                     comment = c(ORCID = "0000-0002-2006-7320")))
-Description: Implements a robust, voting-based pathway enrichment method designed for DNA methylation data analysis. The algorithm allows the input of expression quantitative trait methylation (eQTM) data to aggregates pathway signals across multiple parameter settings, and selects pathways supported across combinations using a vote-pruning strategy.
+Description: Performs pathway enrichment analysis using a voting-based framework that integrates CpG–gene regulatory information from expression quantitative trait methylation (eQTM) data. For a grid of top-ranked CpGs and filtering thresholds, gene sets are generated and refined using an entropy-based pruning strategy that balances information richness, stability, and probe bias correction. In particular, gene lists dominated by genes with disproportionately high numbers of CpG mappings are penalized to mitigate active probe bias—a common artifact in methylation data analysis. Enrichment results across parameter combinations are then aggregated using a voting scheme, prioritizing pathways that are consistently recovered under diverse settings and robust to parameter perturbations.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Depends: R (>= 4.0.0)
-Imports: dplyr, org.Hs.eg.db, ReactomePA, clusterProfiler,
-        AnnotationDbi, methods, future, furrr, parallelly
+Imports: AnnotationDbi, clusterProfiler, future, furrr, GO.db, methods,
+        org.Hs.eg.db, parallelly, reactome.db
 Suggests: testthat
 RoxygenNote: 7.3.2
 NeedsCompilation: no
-Packaged: 2025-04-12 16:30:36 UTC; y-zhe
-Author: Yinan Zheng [aut, cre] (<https://orcid.org/0000-0002-2006-7320>)
+Packaged: 2025-06-24 16:50:10 UTC; y-zhe
+Author: Yinan Zheng [aut, cre] (ORCID: <https://orcid.org/0000-0002-2006-7320>)
 Maintainer: Yinan Zheng <y-zheng@northwestern.edu>
 Repository: CRAN
-Date/Publication: 2025-04-16 14:20:12 UTC
+Date/Publication: 2025-06-25 12:20:34 UTC
