@@ -5,53 +5,59 @@
 \title{Pathway Voting-Based Enrichment Analysis}
 \usage{
 pathway_vote(
-  ewas_data,
+  cpg_input,
   eQTM,
   databases = c("Reactome"),
   k_grid = NULL,
   stat_grid = NULL,
   distance_grid = NULL,
-  fixed_prune = NULL,
   grid_size = 5,
-  min_genes_per_hit = 2,
   overlap_threshold = 0.7,
+  fixed_prune = NULL,
+  min_genes_per_hit = 2,
   readable = FALSE,
   workers = NULL,
   verbose = FALSE
 )
 }
 \arguments{
-\item{ewas_data}{A data.frame containing CpG-level association results. The first column must contain CpG probe IDs,
-which will be matched against the eQTM object. The second column should contain a numeric ranking metric, such as a p-value, t-statistic, or
-feature importance score.}
+\item{cpg_input}{A data.frame containing CpG-level results or identifiers. The first column must contain CpG IDs,
+which can be Illumina probe IDs (e.g., "cg00000029") for array-based data, or genomic coordinates
+(e.g., "chr1:10468" or "chr1:10468:+") for sequencing-based data. These IDs will be matched against
+the eQTM object. Optionally, a second column may provide a ranking metric. If supplied, this must be:
+(i) the complete set of raw p-values from association tests (required for automatic \code{k_grid}
+generation), or (ii) an alternative metric such as t-statistics or feature importance scores, in which
+case \code{k_grid} must be specified manually. If no ranking information is provided, all input CpGs
+are used directly and \code{k_grid} is ignored.}
 
-\item{eQTM}{An \code{eQTM} object containing CpG–gene linkage information, created by the \code{create_eQTM()} function. This object provides
-the CpG-to-gene mapping used for pathway inference.}
+\item{eQTM}{An \code{eQTM} object containing CpG-gene linkage information, created by the \code{create_eQTM()} function. This object provides
+the CpG-to-gene mapping used for pathway inference. Please make sure the CpG IDs used here match those in \code{cpg_input}.}
 
 \item{databases}{A character vector of pathway databases. Supporting: "Reactome", "KEGG", and "GO".}
 
-\item{k_grid}{A numeric vector of top-k CpGs used for gene set construction. If NULL, the grid is automatically inferred using a log-scaled range
-guided by the number of CpGs passing FDR < 0.05. Note: This requires that \code{ewas_data} contains raw p-values (second column) from an association analysis;
-for other metrics (e.g., t-statistic or importance scores), \code{k_grid} must be provided manually.}
+\item{k_grid}{A numeric vector specifying the top-k CpGs used for gene set construction. If \code{NULL}, the grid is inferred automatically,
+but this requires that \code{cpg_input} contains: (i) the complete set of CpGs tested (first column), and (ii) raw p-values from the association
+test (second column). If these conditions are not satisfied, or if alternative ranking metrics are provided (e.g., t-statistics, feature importance scores),
+then \code{k_grid} must be specified manually.}
 
 \item{stat_grid}{A numeric vector of eQTM statistic thresholds. If NULL, generated based on quantiles of the observed distribution.}
 
-\item{distance_grid}{A numeric vector of CpG-gene distance thresholds (in base pairs). If NULL, generated similarly.}
-
-\item{fixed_prune}{Integer or NULL. Minimum number of votes to retain a pathway. If NULL, will use cuberoot(N) where N is the number of enrichment runs.}
+\item{distance_grid}{A numeric vector of CpG-gene distance thresholds (in base pairs). If NULL, generated based on quantiles of the observed distribution.}
 
 \item{grid_size}{Integer. Number of values in each grid when auto-generating. Default is 5.}
 
-\item{min_genes_per_hit}{Minimum number of genes (`Count`) a pathway must include to be considered. Default is 2.}
-
 \item{overlap_threshold}{Numeric between 0 and 1. Controls the maximum allowed Jaccard similarity between gene lists during redundancy filtering.
-Defualt is 0.7, which provides robust and stable results across a variety of simulation scenarios.}
+Default is 0.7, which provides robust and stable results across a variety of simulation scenarios.}
 
-\item{readable}{Logical. whether to convert Entrez IDs to gene symbols in enrichment results.}
+\item{fixed_prune}{Integer or NULL. Minimum number of votes to retain a pathway. If NULL, will use cuberoot(N) where N is the number of total enrichment runs.}
+
+\item{min_genes_per_hit}{Minimum number of genes a pathway must include to be considered. Default is 2.}
+
+\item{readable}{Logical. Whether to convert Entrez IDs to gene symbols in enrichment results.}
 
 \item{workers}{Optional integer. Number of parallel workers. If NULL, use 2 logical cores.}
 
-\item{verbose}{Logical. whether to print progress messages.}
+\item{verbose}{Logical. Whether to print progress messages.}
 }
 \value{
 A named list of data.frames, each corresponding to a selected pathway database
@@ -60,11 +66,11 @@ columns: `ID`, `p.adjust`, `Description`, and `geneID`.
 }
 \description{
 Performs pathway enrichment analysis using a voting-based framework that integrates
-CpG–gene regulatory information from expression quantitative trait methylation (eQTM) data.
+CpG-gene regulatory information from expression quantitative trait methylation (eQTM) data.
 For a grid of top-ranked CpGs and filtering thresholds, gene sets are generated and refined using
 an entropy-based pruning strategy that balances information richness, stability, and probe bias correction.
 In particular, gene lists dominated by genes with disproportionately high numbers of CpG mappings
-are penalized to mitigate active probe bias—a common artifact in methylation data analysis.
+are penalized to mitigate active probe bias, a common artifact in methylation data analysis.
 Enrichment results across parameter combinations are then aggregated using a voting scheme,
 prioritizing pathways that are consistently recovered under diverse settings and robust to parameter perturbations.
 }
@@ -97,7 +103,7 @@ eqtm_obj <- create_eQTM(eqtm_data)
 # Run pathway voting with minimal settings
 \dontrun{
 results <- pathway_vote(
-  ewas_data = ewas,
+  cpg_input = ewas,
   eQTM = eqtm_obj,
   databases = c("GO", "KEGG", "Reactome"),
   readable = TRUE,

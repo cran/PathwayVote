@@ -1,4 +1,5 @@
-#' @importFrom stats na.omit p.adjust quantile
+#' @importFrom stats glm predict quasipoisson setNames na.omit p.adjust quantile
+#' @importFrom harmonicmeanp p.hmp
 #' @importFrom utils head
 #' @importFrom future plan
 #' @importFrom furrr future_map furrr_options
@@ -12,33 +13,39 @@
 #'
 #' @description
 #' Performs pathway enrichment analysis using a voting-based framework that integrates
-#' CpG–gene regulatory information from expression quantitative trait methylation (eQTM) data.
+#' CpG-gene regulatory information from expression quantitative trait methylation (eQTM) data.
 #' For a grid of top-ranked CpGs and filtering thresholds, gene sets are generated and refined using
 #' an entropy-based pruning strategy that balances information richness, stability, and probe bias correction.
 #' In particular, gene lists dominated by genes with disproportionately high numbers of CpG mappings
-#' are penalized to mitigate active probe bias—a common artifact in methylation data analysis.
+#' are penalized to mitigate active probe bias, a common artifact in methylation data analysis.
 #' Enrichment results across parameter combinations are then aggregated using a voting scheme,
 #' prioritizing pathways that are consistently recovered under diverse settings and robust to parameter perturbations.
 #'
-#' @param ewas_data A data.frame containing CpG-level association results. The first column must contain CpG probe IDs,
-#' which will be matched against the eQTM object. The second column should contain a numeric ranking metric, such as a p-value, t-statistic, or
-#' feature importance score.
-#' @param eQTM An \code{eQTM} object containing CpG–gene linkage information, created by the \code{create_eQTM()} function. This object provides
-#' the CpG-to-gene mapping used for pathway inference.
+#' @param cpg_input A data.frame containing CpG-level results or identifiers. The first column must contain CpG IDs,
+#' which can be Illumina probe IDs (e.g., "cg00000029") for array-based data, or genomic coordinates
+#' (e.g., "chr1:10468" or "chr1:10468:+") for sequencing-based data. These IDs will be matched against
+#' the eQTM object. Optionally, a second column may provide a ranking metric. If supplied, this must be:
+#' (i) the complete set of raw p-values from association tests (required for automatic \code{k_grid}
+#' generation), or (ii) an alternative metric such as t-statistics or feature importance scores, in which
+#' case \code{k_grid} must be specified manually. If no ranking information is provided, all input CpGs
+#' are used directly and \code{k_grid} is ignored.
+#' @param eQTM An \code{eQTM} object containing CpG-gene linkage information, created by the \code{create_eQTM()} function. This object provides
+#' the CpG-to-gene mapping used for pathway inference. Please make sure the CpG IDs used here match those in \code{cpg_input}.
 #' @param databases A character vector of pathway databases. Supporting: "Reactome", "KEGG", and "GO".
-#' @param k_grid A numeric vector of top-k CpGs used for gene set construction. If NULL, the grid is automatically inferred using a log-scaled range
-#' guided by the number of CpGs passing FDR < 0.05. Note: This requires that \code{ewas_data} contains raw p-values (second column) from an association analysis;
-#' for other metrics (e.g., t-statistic or importance scores), \code{k_grid} must be provided manually.
+#' @param k_grid A numeric vector specifying the top-k CpGs used for gene set construction. If \code{NULL}, the grid is inferred automatically,
+#' but this requires that \code{cpg_input} contains: (i) the complete set of CpGs tested (first column), and (ii) raw p-values from the association
+#' test (second column). If these conditions are not satisfied, or if alternative ranking metrics are provided (e.g., t-statistics, feature importance scores),
+#' then \code{k_grid} must be specified manually.
 #' @param stat_grid A numeric vector of eQTM statistic thresholds. If NULL, generated based on quantiles of the observed distribution.
-#' @param distance_grid A numeric vector of CpG-gene distance thresholds (in base pairs). If NULL, generated similarly.
-#' @param fixed_prune Integer or NULL. Minimum number of votes to retain a pathway. If NULL, will use cuberoot(N) where N is the number of enrichment runs.
+#' @param distance_grid A numeric vector of CpG-gene distance thresholds (in base pairs). If NULL, generated based on quantiles of the observed distribution.
 #' @param grid_size Integer. Number of values in each grid when auto-generating. Default is 5.
-#' @param min_genes_per_hit Minimum number of genes (`Count`) a pathway must include to be considered. Default is 2.
 #' @param overlap_threshold Numeric between 0 and 1. Controls the maximum allowed Jaccard similarity between gene lists during redundancy filtering.
-#' Defualt is 0.7, which provides robust and stable results across a variety of simulation scenarios.
+#' Default is 0.7, which provides robust and stable results across a variety of simulation scenarios.
+#' @param fixed_prune Integer or NULL. Minimum number of votes to retain a pathway. If NULL, will use cuberoot(N) where N is the number of total enrichment runs.
+#' @param min_genes_per_hit Minimum number of genes a pathway must include to be considered. Default is 2.
 #' @param workers Optional integer. Number of parallel workers. If NULL, use 2 logical cores.
-#' @param readable Logical. whether to convert Entrez IDs to gene symbols in enrichment results.
-#' @param verbose Logical. whether to print progress messages.
+#' @param readable Logical. Whether to convert Entrez IDs to gene symbols in enrichment results.
+#' @param verbose Logical. Whether to print progress messages.
 #'
 #' @return A named list of data.frames, each corresponding to a selected pathway database
 #' (e.g., `Reactome`, `KEGG`, `GO`). Each data.frame contains enriched pathways with
@@ -73,7 +80,7 @@
 #' # Run pathway voting with minimal settings
 #' \dontrun{
 #' results <- pathway_vote(
-#'   ewas_data = ewas,
+#'   cpg_input = ewas,
 #'   eQTM = eqtm_obj,
 #'   databases = c("GO", "KEGG", "Reactome"),
 #'   readable = TRUE,
@@ -86,38 +93,54 @@
 #'
 #' @export
 #'
-pathway_vote <- function(ewas_data, eQTM,
+pathway_vote <- function(cpg_input, eQTM,
                          databases = c("Reactome"),
                          k_grid = NULL,
                          stat_grid = NULL,
                          distance_grid = NULL,
-                         fixed_prune = NULL,
                          grid_size = 5,
-                         min_genes_per_hit = 2,
                          overlap_threshold = 0.7,
+                         fixed_prune = NULL,
+                         min_genes_per_hit = 2,
                          readable = FALSE,
                          workers = NULL,
                          verbose = FALSE) {
 
+  if (is.vector(cpg_input) && is.character(cpg_input)) {
+    cpg_input <- data.frame(cpg = cpg_input, stringsAsFactors = FALSE)
+  }
+  if (!is.data.frame(cpg_input)) {
+    stop("`cpg_input` must be a data.frame or a character vector of CpG IDs.")
+  }
+  if (!"cpg" %in% colnames(cpg_input)) {
+    colnames(cpg_input)[1] <- "cpg"
+  }
+  cpg_input$cpg <- as.character(cpg_input$cpg)
+  cpg_input <- cpg_input[!is.na(cpg_input$cpg) & nzchar(cpg_input$cpg), , drop = FALSE]
+  cpg_input <- cpg_input[!duplicated(cpg_input$cpg), , drop = FALSE]
+
+  if (nrow(cpg_input) == 0) {
+    stop("No valid CpG IDs remain after filtering NA/empty/duplicates in `cpg_input`.")
+  }
+
   if (verbose) {
     message("==== PathwayVote Start ====")
-    message("Input CpGs: ", nrow(ewas_data))
+    message("Input rows: ", nrow(cpg_input))
     message("Databases: ", paste(databases, collapse = ", "))
   }
 
-  required_pkgs <- c("PathwayVote", "purrr", "furrr", "future", "ReactomePA", "clusterProfiler", "org.Hs.eg.db")
-  lapply(required_pkgs, function(pkg) {
-    if (!requireNamespace(pkg, quietly = TRUE)) {
-      stop("Package '", pkg, "' is required. Please install it first.")
-    }
-  })
-  suppressMessages({
-    lapply(required_pkgs, library, character.only = TRUE)
-  })
+  # required_pkgs <- c("PathwayVote", "purrr", "furrr", "future", "ReactomePA", "clusterProfiler", "org.Hs.eg.db")
+  # lapply(required_pkgs, function(pkg) {
+  #   if (!requireNamespace(pkg, quietly = TRUE)) {
+  #     stop("Package '", pkg, "' is required. Please install it first.")
+  #   }
+  # })
+  # suppressMessages({
+  #   lapply(required_pkgs, library, character.only = TRUE)
+  # })
 
   available_cores <- parallelly::availableCores(logical = TRUE)
   user_specified_workers <- !is.null(workers)
-
   if (is.null(workers)) {
     workers <- min(2, available_cores)
   } else {
@@ -126,110 +149,194 @@ pathway_vote <- function(ewas_data, eQTM,
     }
     workers <- min(workers, available_cores)
   }
-
   safe_setup_plan(workers)
-
-  if (verbose) {
-    message("Using ", workers, ifelse(workers == 1, " worker", " workers"))
-  }
+  if (verbose) message("Using ", workers, ifelse(workers == 1, " worker", " workers"))
 
   if (!inherits(eQTM, "eQTM")) stop("eQTM must be an eQTM object")
-  if (!check_ewas_cpg_match(ewas_data, eQTM)) stop("First column of `ewas_data` does not match CpG IDs in eQTM object. Please verify your input.")
+  if (!check_cpg_match(cpg_input, eQTM, verbose)) {
+    stop("First column of `cpg_input` does not match CpG IDs in eQTM object. Please verify your input.")
+  }
   if (all(is.na(getData(eQTM)$entrez))) stop("Entrez IDs are required for pathway analysis")
-  if (ncol(ewas_data) < 2) stop("ewas_data must have at least two columns: CpG ID (first column) and a ranking column")
 
-  # Automatically use the second column as ranking
-  rank_column <- colnames(ewas_data)[2]
-  rank_values <- ewas_data[[rank_column]]
+  # ------------------------------
+  # Detect mode: CpG-only vs Ranking
+  # ------------------------------
+  mode_cpg_only <- TRUE
+  rank_column <- NULL
+  rank_values <- NULL
 
-  if (!is.numeric(rank_values)) {
-    stop("The second column of ewas_data must be numeric for ranking purposes.")
-  }
-
-  is_pval_like <- all(rank_values >= 0 & rank_values <= 1, na.rm = TRUE)
-  use_abs <- !is_pval_like
-  rank_decreasing <- !is_pval_like
-
-  if (verbose) {
-    message(sprintf("Auto-selected ranking: %s (decreasing = %s, absolute = %s)",
-                    rank_column, rank_decreasing, use_abs))
-  }
-
-  if (is.null(k_grid)) {
-    if (!is_pval_like) {
-      stop("Automatic k_grid generation is only supported when ewas_data contains p-values (second column). ",
-           "Please provide k_grid manually for other ranking metrics.")
+  if (ncol(cpg_input) >= 2) {
+    rank_column <- colnames(cpg_input)[2]
+    rank_values <- cpg_input[[rank_column]]
+    if (is.numeric(rank_values)) {
+      mode_cpg_only <- FALSE
     }
-    k_grid <- generate_k_grid_fdr_guided(ewas_data, rank_column, grid_size, verbose = verbose)
   }
 
+  if (mode_cpg_only) {
+    if (verbose) message("Mode detected: CpG-only (no ranking). `k_grid` will be ignored.")
+  } else {
+    # Traditional ranking mode checks
+    is_pval_like <- all(rank_values >= 0 & rank_values <= 1, na.rm = TRUE)
+    use_abs <- !is_pval_like
+    rank_decreasing <- !is_pval_like
+
+    if (verbose) {
+      if (is_pval_like) {
+        message(sprintf("Mode detected: Ranking mode using column `%s` as raw p-values.", rank_column))
+        message("  Ranking rule: smaller p-values rank higher (ascending order).")
+      } else {
+        message(sprintf("Mode detected: Ranking mode using column `%s` as numeric scores.", rank_column))
+        message(sprintf("  Ranking rule: larger absolute values of `%s` rank higher (descending order).", rank_column))
+      }
+    }
+
+    if (is.null(k_grid)) {
+      if (!is_pval_like) {
+        stop("Automatic k_grid generation is only supported when the second column is p-values. ",
+             "Please provide k_grid manually for other ranking metrics, or provide CpG-only input.")
+      }
+      k_grid <- generate_k_grid_fdr_guided(cpg_input, rank_column, grid_size, verbose = verbose)
+    }
+
+    ranking_values <- if (use_abs) abs(rank_values) else rank_values
+    cpg_input <- cpg_input[order(ranking_values, decreasing = rank_decreasing), , drop = FALSE]
+  }
+
+  # ------------------------
+  # Grids for stat/distance
+  # ------------------------
   if (is.null(stat_grid)) {
     stat_vals <- abs(getData(eQTM)$statistics)
-    range_stat <- quantile(stat_vals, probs = c(0.05, 0.95), na.rm = TRUE)
+    range_stat <- stats::quantile(stat_vals, probs = c(0.05, 0.95), na.rm = TRUE)
     stat_grid <- round(seq(range_stat[1], range_stat[2], length.out = grid_size), 2)
     if (verbose) message("Auto-selected stat_grid: ", paste(stat_grid, collapse = ", "))
   }
-
   if (is.null(distance_grid)) {
     dist_vals <- getData(eQTM)$distance
-    range_dist <- quantile(dist_vals, probs = c(0.05, 0.95), na.rm = TRUE)
+    range_dist <- stats::quantile(dist_vals, probs = c(0.05, 0.95), na.rm = TRUE)
     distance_grid <- round(seq(range_dist[1], range_dist[2], length.out = grid_size), -3)
     if (verbose) message("Auto-selected distance_grid: ", paste(distance_grid, collapse = ", "))
   }
 
-  ranking_values <- if (use_abs) abs(rank_values) else rank_values
-  ewas_data <- ewas_data[order(ranking_values, decreasing = rank_decreasing), ]
+  cpg_count <- get_cpg_count_per_gene(eQTM)
 
-  if (verbose) message("Generating gene lists for all k values...")
+  # ------------------------------
+  # Generate candidate gene lists
+  # ------------------------------
+  if (verbose) message("==== Generating gene lists ====")
+
+  total_initial <- 0L
+  total_retained <- 0L
   all_gene_sets <- list()
-  valid_combination_count <- 0
 
-  for (k in k_grid) {
-    if (verbose) message(sprintf("Processing top %d CpGs...", k))
-    selected_cpgs <- head(ewas_data$cpg, k)
+  if (mode_cpg_only) {
+    # Single pass using all provided CpGs
+    selected_cpgs <- unique(cpg_input$cpg)
+    if (verbose) message("CpG-only: using all provided CpGs (n = ", length(selected_cpgs), ") in a single pass.")
     eQTM_subset <- new("eQTM", data = getData(eQTM)[getData(eQTM)$cpg %in% selected_cpgs, ],
                        metadata = getMetadata(eQTM))
 
-    # Step 1: Generate all candidate gene lists
-    raw_results <- generate_gene_lists_grid(eQTM_subset, stat_grid, distance_grid, verbose = verbose)
+    if (nrow(getData(eQTM_subset)) == 0)
+      stop("None of the input CpG IDs matched the eQTM object. Check ID formats (probe IDs vs genomic coordinates).")
 
-    # Step 2: Apply entropy + stability-based + probe bias correction pruning
+    raw_results <- generate_gene_lists_grid(eQTM_subset, stat_grid, distance_grid)
+    initial_k <- length(raw_results$gene_lists)
+    total_initial <- total_initial + initial_k
+
     entropy_filtered_lists <- select_gene_lists_entropy_auto(
       gene_lists = raw_results$gene_lists,
-      grid_size = grid_size,
-      overlap_threshold = overlap_threshold,
-      verbose = verbose
+      cpg_count = cpg_count,
+      overlap_threshold = overlap_threshold
     )
 
-    # Step 3: Match back to their corresponding stat/distance params
     kept_indices <- which(vapply(raw_results$gene_lists, function(x)
       any(sapply(entropy_filtered_lists, function(y) setequal(x, y))), logical(1)))
 
+    retained_k <- length(kept_indices)
+    total_retained <- total_retained + retained_k
+    if (verbose) {
+      pct_k <- if (initial_k > 0) 100 * retained_k / initial_k else 0
+      message(sprintf("CpG-only: retained %d of %d candidates (%.1f%%).", retained_k, initial_k, pct_k))
+    }
+
     for (i in kept_indices) {
-      gene_list_i <- raw_results$gene_lists[[i]]
       all_gene_sets[[length(all_gene_sets) + 1]] <- list(
-        gene_list = gene_list_i,
+        gene_list = raw_results$gene_lists[[i]],
         param = raw_results$params[[i]],
-        k = k
+        k = NA_integer_
       )
-      valid_combination_count <- valid_combination_count + 1
+    }
+
+  } else {
+    # loop over k_grid
+    for (k in k_grid) {
+      if (verbose) message(sprintf("Processing top %d CpGs...", k))
+      selected_cpgs <- utils::head(cpg_input$cpg, k)
+      eQTM_subset <- new("eQTM", data = getData(eQTM)[getData(eQTM)$cpg %in% selected_cpgs, ],
+                         metadata = getMetadata(eQTM))
+
+      if (nrow(getData(eQTM_subset)) == 0) {
+        if (verbose) message("No CpG matched eQTM under current top-k selection; skipping this k.")
+        next
+      }
+
+      raw_results <- generate_gene_lists_grid(eQTM_subset, stat_grid, distance_grid)
+      initial_k <- length(raw_results$gene_lists)
+      total_initial <- total_initial + initial_k
+
+      entropy_filtered_lists <- select_gene_lists_entropy_auto(
+        gene_lists = raw_results$gene_lists,
+        cpg_count = cpg_count,
+        overlap_threshold = overlap_threshold
+      )
+
+      kept_indices <- which(vapply(raw_results$gene_lists, function(x)
+        any(sapply(entropy_filtered_lists, function(y) setequal(x, y))), logical(1)))
+
+      retained_k <- length(kept_indices)
+      total_retained <- total_retained + retained_k
+      if (verbose) {
+        pct_k <- if (initial_k > 0) 100 * retained_k / initial_k else 0
+        message(sprintf("k = %d: retained %d of %d candidates (%.1f%%).",
+                        k, retained_k, initial_k, pct_k))
+      }
+
+      for (i in kept_indices) {
+        all_gene_sets[[length(all_gene_sets) + 1]] <- list(
+          gene_list = raw_results$gene_lists[[i]],
+          param = raw_results$params[[i]],
+          k = k
+        )
+      }
     }
   }
 
-  if (verbose) message(sprintf("Gene filtering completed. %d valid combinations retained.", valid_combination_count))
+  if (verbose) {
+    pct_all <- if (total_initial > 0) 100 * total_retained / total_initial else 0
+    message(sprintf(
+      "Gene list candidates filtering completed. %d valid candidates out of %d initial candidates retained (%.1f%%).",
+      total_retained, total_initial, pct_all
+    ))
+  }
+
+  if (length(all_gene_sets) == 0) {
+    stop("No candidate gene lists were retained after entropy pruning. ",
+         "Try relaxing thresholds (e.g., lower stat_grid / increase distance_grid) ",
+         "or check CpG-eQTM mapping coverage.")
+  }
 
   gene_lists <- lapply(all_gene_sets, function(x) x$gene_list)
-  universe_genes <- unique(na.omit(getData(eQTM)$entrez))
+  universe_genes <- unique(stats::na.omit(getData(eQTM)$entrez))
 
-  if (verbose) message("Preparing all annotation data...")
+  if (verbose) message("==== Preparing all annotation data ====")
   preloaded_data <- prepare_enrichment_data(databases, verbose = verbose)
 
-  if (verbose) message("Running enrichment analysis...")
+  if (verbose) message("==== Running enrichment analysis ====")
   enrich_results <- furrr::future_map(
     gene_lists,
     function(glist) {
       tryCatch({
-        # 2. Use the fast function with preloaded data
         run_enrichment(
           gene_list = glist,
           databases = databases,
@@ -238,7 +345,7 @@ pathway_vote <- function(ewas_data, eQTM,
           preloaded_data = preloaded_data
         )
       }, error = function(e) {
-        warning("Enrichment failed for gene list ", paste(head(glist, 5), collapse = ","), ": ", conditionMessage(e))
+        warning("Enrichment failed for gene list ", paste(utils::head(glist, 5), collapse = ","), ": ", conditionMessage(e))
         NULL
       })
     },
@@ -246,7 +353,6 @@ pathway_vote <- function(ewas_data, eQTM,
     .progress = verbose
   )
 
-  # Will use cube-root(N) if fixed_prune is NULL
   enrich_results <- prune_pathways_by_vote(
     enrich_results,
     fixed_prune = fixed_prune,

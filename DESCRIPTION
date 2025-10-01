@@ -1,7 +1,7 @@
 Package: PathwayVote
 Title: Robust Pathway Enrichment for DNA Methylation Studies Using
         Ensemble Voting
-Version: 0.1.1
+Version: 0.1.2
 Authors@R: c(person("Yinan", "Zheng", 
                     email = "y-zheng@northwestern.edu", 
                     role = c("aut", "cre"), 
@@ -10,13 +10,13 @@ Description: Performs pathway enrichment analysis using a voting-based framework
 License: MIT + file LICENSE
 Encoding: UTF-8
 Depends: R (>= 4.0.0)
-Imports: AnnotationDbi, clusterProfiler, future, furrr, GO.db, methods,
-        org.Hs.eg.db, parallelly, reactome.db
+Imports: harmonicmeanp, AnnotationDbi, clusterProfiler, future, furrr,
+        GO.db, methods, org.Hs.eg.db, parallelly, reactome.db
 Suggests: testthat
 RoxygenNote: 7.3.2
 NeedsCompilation: no
-Packaged: 2025-06-24 16:50:10 UTC; y-zhe
+Packaged: 2025-10-01 05:12:03 UTC; y-zhe
 Author: Yinan Zheng [aut, cre] (ORCID: <https://orcid.org/0000-0002-2006-7320>)
 Maintainer: Yinan Zheng <y-zheng@northwestern.edu>
 Repository: CRAN
-Date/Publication: 2025-06-25 12:20:34 UTC
+Date/Publication: 2025-10-01 05:30:02 UTC

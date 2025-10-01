@@ -1,11 +1,11 @@
-e002598bd16d64cbc492f8bbd71d1e6a *DESCRIPTION
+ce5268f24afbc45c1f088ebd9cbdac1a *DESCRIPTION
 4907d2ae4de7a496fe0d8ea61ccd20a5 *LICENSE
-b396f70a194f345a004121ce4433e34c *NAMESPACE
+a44f1f5411bc4bf9ed5522e49f2976bb *NAMESPACE
 8da5fb702b335e7dc25c7fe09a156672 *R/eQTM-class.R
-da63c86aaacf60766eac8fda90409a52 *R/pathway-vote.R
-c6a10fe2666661e41566a2e2d0fdfd0b *R/utils.R
+aca11c3d7b6763bae3ea699b0f2da695 *R/pathway-vote.R
+8ee0fdb1a1ba499b23af9e4649194266 *R/utils.R
 884230d9535083db894511b034486be6 *man/create_eQTM.Rd
 73f6f21a4431d11452e766cc29631750 *man/eQTM-class.Rd
 2189e314767696aca460a02ecc9bbfae *man/getData.Rd
 cc6ad99082039420f4254619bff0a1c6 *man/getMetadata.Rd
-a045eb8d31be9add34ae1b520ce4f51f *man/pathway_vote.Rd
+30b8cb65d8e70e1e0f534b9b5983a968 *man/pathway_vote.Rd
