@@ -5,9 +5,7 @@
 #' @importFrom furrr future_map furrr_options
 #' @importFrom parallelly availableCores
 #' @importFrom AnnotationDbi select keys
-#' @importFrom reactome.db reactome.db
 #' @importFrom clusterProfiler enricher download_KEGG setReadable
-#' @importFrom org.Hs.eg.db org.Hs.eg.db
 
 #' @title Pathway Voting-Based Enrichment Analysis
 #'
@@ -47,9 +45,15 @@
 #' @param readable Logical. Whether to convert Entrez IDs to gene symbols in enrichment results.
 #' @param verbose Logical. Whether to print progress messages.
 #'
-#' @return A named list of data.frames, each corresponding to a selected pathway database
-#' (e.g., `Reactome`, `KEGG`, `GO`). Each data.frame contains enriched pathways with
-#' columns: `ID`, `p.adjust`, `Description`, and `geneID`.
+#' @return A named list of data.frames containing:
+#' \itemize{
+#'   \item Enrichment results for each selected database (e.g., `Reactome`, `KEGG`, `GO`).
+#'         Each data.frame contains columns: `ID`, `p.adjust`, `Description`, and `geneID`.
+#'   \item `CpG_Gene_Mapping`: A data.frame showing all CpG-Gene relationships for the
+#'         CpGs present in the input `cpg_input`. An additional column `Enriched_DB` is
+#'         included to indicate which databases (if any) identified the gene as part
+#'         of a enriched pathway.
+#' }
 #'
 #' @examples
 #' set.seed(123)
@@ -89,6 +93,10 @@
 #' head(results$GO)
 #' head(results$KEGG)
 #' head(results$Reactome)
+#'
+#' # Export results to Excel (optional)
+#' library(openxlsx)
+#' write_enrich_results_xlsx(results, "pathway_vote_results.xlsx")
 #' }
 #'
 #' @export
@@ -341,7 +349,6 @@ pathway_vote <- function(cpg_input, eQTM,
           gene_list = glist,
           databases = databases,
           universe = universe_genes,
-          readable = readable,
           preloaded_data = preloaded_data
         )
       }, error = function(e) {
@@ -360,6 +367,127 @@ pathway_vote <- function(cpg_input, eQTM,
     verbose = verbose
   )
 
+  # Translate IDs to Symbols here (Main Process) if requested
+  if (readable) {
+    if (verbose) message("Mapping Entrez IDs to Symbols...")
+    # Use eQTM mapping first as it's most relevant to the data
+    eqtm_full <- getData(eQTM)
+
+    # Create mapping vector
+    gene_map <- NULL
+    if ("gene" %in% colnames(eqtm_full) && "entrez" %in% colnames(eqtm_full)) {
+       map_df <- unique(eqtm_full[!is.na(eqtm_full$entrez) & !is.na(eqtm_full$gene), c("entrez", "gene")])
+       gene_map <- stats::setNames(map_df$gene, map_df$entrez)
+    }
+
+    # Fallback to org.Hs.eg.db if eQTM map is incomplete or missing
+    if (requireNamespace("org.Hs.eg.db", quietly = TRUE)) {
+       if (verbose) message("  Supplementing gene mapping with org.Hs.eg.db...")
+       tryCatch({
+         org_db <- org.Hs.eg.db::org.Hs.eg.db
+         # Get all needed entrez IDs from results to map efficiently
+         all_entrez <- unique(unlist(lapply(enrich_results, function(x) {
+             unlist(lapply(x, function(df) {
+                 if (!is.null(df) && "geneID" %in% colnames(df)) {
+                     unlist(strsplit(df$geneID, "/"))
+                 } else {
+                     NULL
+                 }
+             }))
+         })))
+
+         if (length(all_entrez) > 0) {
+           supp_map <- suppressMessages(AnnotationDbi::mapIds(org_db, keys = all_entrez, column = "SYMBOL", keytype = "ENTREZID"))
+
+           if (is.null(gene_map)) {
+             gene_map <- supp_map
+           } else {
+             # Merge, preferring eQTM but filling gaps
+             missing_keys <- setdiff(names(supp_map), names(gene_map))
+             if (length(missing_keys) > 0) {
+                 gene_map <- c(gene_map, supp_map[missing_keys])
+             }
+           }
+         }
+       }, error = function(e) warning("Failed to map via org.Hs.eg.db: ", e$message))
+    }
+
+    if (!is.null(gene_map)) {
+      enrich_results <- lapply(enrich_results, function(run_res) {
+        lapply(run_res, function(df) {
+          if (!is.null(df) && nrow(df) > 0 && "geneID" %in% colnames(df)) {
+             # Vectorized replacement function
+             df$geneID <- vapply(df$geneID, function(gid_str) {
+                 ids <- unlist(strsplit(gid_str, "/", fixed=TRUE))
+                 syms <- gene_map[ids]
+                 # If symbol not found, keep ID
+                 syms[is.na(syms)] <- ids[is.na(syms)]
+                 paste(syms, collapse = "/")
+             }, character(1))
+          }
+          df
+        })
+      })
+    }
+  }
+
   result_tables <- combine_enrichment_results(enrich_results, databases, verbose = verbose)
+
+  # ------------------------------
+  # Attach CpG-Gene mapping table
+  # ------------------------------
+  if (verbose) message("Generating final CpG-Gene mapping table...")
+
+  eqtm_full <- getData(eQTM)
+
+  # Filter eQTM to only include user-supplied CpGs
+  eqtm_subset <- eqtm_full[eqtm_full$cpg %in% cpg_input$cpg, , drop = FALSE]
+
+  if (verbose) message("Annotating CpG-Gene mapping with enrichment status...")
+
+  # Identify which genes contribute to the enriched pathways in each DB
+  gene_enrichment_map <- list()
+
+  for (db in databases) {
+    res_df <- result_tables[[db]]
+    if (!is.null(res_df) && is.data.frame(res_df) && nrow(res_df) > 0 && "geneID" %in% names(res_df)) {
+      # Extract all genes that appear in enriched pathways for this DB
+      genes_in_db <- unique(unlist(strsplit(res_df$geneID, "/", fixed = TRUE)))
+      genes_in_db <- genes_in_db[nzchar(genes_in_db)]
+
+      for (g in genes_in_db) {
+        gene_enrichment_map[[g]] <- c(gene_enrichment_map[[g]], db)
+      }
+    }
+  }
+
+  # Define the ID column used for matching (Symbols if readable=TRUE, otherwise Entrez)
+  match_col <- if (readable) "gene" else "entrez"
+
+  if (nrow(eqtm_subset) > 0) {
+     keys <- as.character(eqtm_subset[[match_col]])
+
+     # Map unique keys first for efficiency
+     uniq_keys <- unique(keys[!is.na(keys)])
+
+     db_strings <- vapply(uniq_keys, function(k) {
+        dbs <- gene_enrichment_map[[k]]
+        if (is.null(dbs)) "" else paste(sort(unique(dbs)), collapse = ", ")
+     }, character(1))
+
+     annotated_col <- rep("", length(keys))
+     match_idx <- match(keys, uniq_keys)
+     valid_mask <- !is.na(match_idx)
+     annotated_col[valid_mask] <- db_strings[match_idx[valid_mask]]
+
+     eqtm_subset$Enriched_DB <- annotated_col
+  } else {
+     eqtm_subset$Enriched_DB <- character(0)
+  }
+
+  # Final Selection
+  cols_to_keep <- intersect(c("cpg", "gene", "entrez", "statistics", "p_value", "distance", "Enriched_DB"), colnames(eqtm_subset))
+  result_tables$CpG_Gene_Mapping <- eqtm_subset[, cols_to_keep, drop = FALSE]
+
   return(result_tables)
 }

@@ -190,10 +190,21 @@ prepare_enrichment_data <- function(databases, organism = "human", verbose = FAL
   user_data_list <- list()
 
   if ("GO" %in% databases) {
+    if (!requireNamespace("org.Hs.eg.db", quietly = TRUE)) {
+      stop("Package 'org.Hs.eg.db' is required for GO analysis. Please install it.")
+    }
+    if (!requireNamespace("GO.db", quietly = TRUE)) {
+      stop("Package 'GO.db' is required for GO analysis. Please install it.")
+    }
     if (verbose) message("Preparing GO annotation data...")
+
+    # Retrieve objects explicitly
+    org_db <- org.Hs.eg.db::org.Hs.eg.db
+    go_db <- GO.db::GO.db
+
     # Get GO to Entrez Gene mappings
-    go_data <- suppressMessages(AnnotationDbi::select(org.Hs.eg.db,
-                                                      keys = keys(org.Hs.eg.db, keytype = "ENTREZID"),
+    go_data <- suppressMessages(AnnotationDbi::select(org_db,
+                                                      keys = AnnotationDbi::keys(org_db, keytype = "ENTREZID"),
                                                       columns = c("GOALL", "ONTOLOGYALL"),
                                                       keytype = "ENTREZID"))
 
@@ -201,7 +212,7 @@ prepare_enrichment_data <- function(databases, organism = "human", verbose = FAL
     term2name <- go_data[, c("GOALL", "ONTOLOGYALL")] # We just need a placeholder name, ID is fine
 
     # Get GO term descriptions
-    go_terms <- suppressMessages(AnnotationDbi::select(GO.db::GO.db,
+    go_terms <- suppressMessages(AnnotationDbi::select(go_db,
                                                        keys = unique(term2gene$GOALL),
                                                        columns = c("TERM"),
                                                        keytype = "GOID"))
@@ -219,16 +230,23 @@ prepare_enrichment_data <- function(databases, organism = "human", verbose = FAL
   }
 
   if ("Reactome" %in% databases) {
+    if (!requireNamespace("reactome.db", quietly = TRUE)) {
+      stop("Package 'reactome.db' is required for Reactome analysis. Please install it.")
+    }
     if (verbose) message("Preparing Reactome annotation data...")
+
+    # Retrieve object explicitly
+    reactome_db <- reactome.db::reactome.db
+
     # Use the reactome.db package for compliant data access
-    term2gene <- suppressMessages(AnnotationDbi::select(reactome.db,
-                                                        keys = keys(reactome.db, "ENTREZID"),
+    term2gene <- suppressMessages(AnnotationDbi::select(reactome_db,
+                                                        keys = AnnotationDbi::keys(reactome_db, "ENTREZID"),
                                                         columns = "PATHID",
                                                         keytype = "ENTREZID"))
     colnames(term2gene) <- c("GENE", "TERM")
     term2gene <- term2gene[, c("TERM", "GENE")] # Ensure correct column order
 
-    term2name <- suppressMessages(AnnotationDbi::select(reactome.db,
+    term2name <- suppressMessages(AnnotationDbi::select(reactome_db,
                                                         keys = unique(term2gene$TERM),
                                                         columns = "PATHNAME",
                                                         keytype = "PATHID"))
@@ -243,7 +261,6 @@ prepare_enrichment_data <- function(databases, organism = "human", verbose = FAL
 run_enrichment <- function(gene_list,
                            databases = c("Reactome", "GO", "KEGG"),
                            universe = NULL,
-                           readable = FALSE,
                            preloaded_data = list()) {
   enrich_results <- list()
 
@@ -266,10 +283,6 @@ run_enrichment <- function(gene_list,
     )
 
     if (!is.null(res)) {
-      if (readable) {
-        # Ensure the OrgDb is available for ID mapping
-        res <- tryCatch(clusterProfiler::setReadable(res, OrgDb = org.Hs.eg.db, keyType = "ENTREZID"), error = function(e) res)
-      }
       enrich_results[[db]] <- as.data.frame(res)
     } else {
       enrich_results[[db]] <- NULL
@@ -436,4 +449,54 @@ prune_pathways_by_vote <- function(enrich_results,
   })
 
   return(pruned_results)
+}
+
+#' @title Export Enrichment Results to Excel
+#'
+#' @description
+#' Exports the results from `pathway_vote` to a multi-sheet Excel file.
+#' Validates that the input is a list, checks for the `openxlsx` package, and handles sheet naming
+#' to comply with Excel limitations.
+#'
+#' @param results A named list of data.frames (e.g., output from `pathway_vote`).
+#' @param file Character. Output file path (e.g., "enrich_results.xlsx").
+#'
+#' @return Invisible. The path to the saved file.
+#'
+#' @examples
+#' \dontrun{
+#' # Assuming `res` is the output from pathway_vote(...)
+#' write_enrich_results_xlsx(res, "my_results.xlsx")
+#' }
+#'
+#' @export
+write_enrich_results_xlsx <- function(results, file = "enrich_results.xlsx") {
+  stopifnot(is.list(results))
+  if (!requireNamespace("openxlsx", quietly = TRUE)) {
+    stop("Please install openxlsx: install.packages('openxlsx')")
+  }
+
+  wb <- openxlsx::createWorkbook()
+
+  # Keep only data.frame-like elements (e.g., GO/KEGG/Reactome)
+  sheets <- results[ vapply(results, function(x) is.data.frame(x) || is.matrix(x), logical(1)) ]
+
+  if (length(sheets) == 0) stop("No data.frame/matrix elements found in `results`.")
+
+  for (nm in names(sheets)) {
+    df <- as.data.frame(sheets[[nm]], stringsAsFactors = FALSE)
+    # Excel sheet name rules: max 31 chars, no invalid chars
+    sheet_name <- substr(gsub("[\\[\\]\\*\\?/\\\\:]", "_", nm), 1, 31)
+    openxlsx::addWorksheet(wb, sheet_name)
+
+    openxlsx::writeData(wb, sheet = sheet_name, x = df)
+
+    # Optional: basic formatting
+    openxlsx::freezePane(wb, sheet = sheet_name, firstRow = TRUE)
+    openxlsx::addFilter(wb, sheet = sheet_name, rows = 1, cols = 1:ncol(df))
+    openxlsx::setColWidths(wb, sheet = sheet_name, cols = 1:ncol(df), widths = "auto")
+  }
+
+  openxlsx::saveWorkbook(wb, file, overwrite = TRUE)
+  invisible(file)
 }

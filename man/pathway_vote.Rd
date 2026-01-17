@@ -60,9 +60,14 @@ Default is 0.7, which provides robust and stable results across a variety of sim
 \item{verbose}{Logical. Whether to print progress messages.}
 }
 \value{
-A named list of data.frames, each corresponding to a selected pathway database
-(e.g., `Reactome`, `KEGG`, `GO`). Each data.frame contains enriched pathways with
-columns: `ID`, `p.adjust`, `Description`, and `geneID`.
+A named list of data.frames containing:
+\itemize{
+  \item Enrichment results for each selected database (e.g., `Reactome`, `KEGG`, `GO`).
+        Each data.frame contains columns: `ID`, `p.adjust`, `Description`, and `geneID`.
+  \item `CpG_Gene_Mapping`: A data.frame showing the CpG-Gene relationships for genes
+        identified in the significantly enriched pathways, limited to the CpGs present
+        in the input `cpg_input`.
+}
 }
 \description{
 Performs pathway enrichment analysis using a voting-based framework that integrates
@@ -112,6 +117,10 @@ results <- pathway_vote(
 head(results$GO)
 head(results$KEGG)
 head(results$Reactome)
+
+# Export results to Excel (optional)
+library(openxlsx)
+write_enrich_results_xlsx(results, "pathway_vote_results.xlsx")
 }
 
 }

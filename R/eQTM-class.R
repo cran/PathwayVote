@@ -104,9 +104,13 @@ create_eQTM <- function(data, metadata = list()) {
   if (all(is.na(data$entrez)) && !all(is.na(data$ensembl))) {
     message("Converting Ensembl IDs to Entrez IDs and gene symbols...")
 
+    if (!requireNamespace("org.Hs.eg.db", quietly = TRUE)) {
+      stop("Package 'org.Hs.eg.db' is required for Ensembl to Entrez conversion. Please install it.")
+    }
+    org_db <- org.Hs.eg.db::org.Hs.eg.db
     suppressWarnings({
-      ensembl_to_entrez <- mapIds(org.Hs.eg.db, keys = data$ensembl, column = "ENTREZID", keytype = "ENSEMBL", multiVals = "first")
-      ensembl_to_symbol <- mapIds(org.Hs.eg.db, keys = data$ensembl, column = "SYMBOL", keytype = "ENSEMBL", multiVals = "first")
+      ensembl_to_entrez <- mapIds(org_db, keys = data$ensembl, column = "ENTREZID", keytype = "ENSEMBL", multiVals = "first")
+      ensembl_to_symbol <- mapIds(org_db, keys = data$ensembl, column = "SYMBOL", keytype = "ENSEMBL", multiVals = "first")
     })
 
     data$entrez <- ensembl_to_entrez[match(data$ensembl, names(ensembl_to_entrez))]
@@ -120,9 +124,13 @@ create_eQTM <- function(data, metadata = list()) {
   } else if (all(is.na(data$ensembl)) && !all(is.na(data$entrez))) {
     message("Converting Entrez IDs to Ensembl IDs and gene symbols...")
 
+    if (!requireNamespace("org.Hs.eg.db", quietly = TRUE)) {
+      stop("Package 'org.Hs.eg.db' is required for Entrez to Ensembl conversion. Please install it.")
+    }
+    org_db <- org.Hs.eg.db::org.Hs.eg.db
     suppressWarnings({
-      entrez_to_ensembl <- mapIds(org.Hs.eg.db, keys = data$entrez, column = "ENSEMBL", keytype = "ENTREZID", multiVals = "first")
-      entrez_to_symbol <- mapIds(org.Hs.eg.db, keys = data$entrez, column = "SYMBOL", keytype = "ENTREZID", multiVals = "first")
+      entrez_to_ensembl <- mapIds(org_db, keys = data$entrez, column = "ENSEMBL", keytype = "ENTREZID", multiVals = "first")
+      entrez_to_symbol <- mapIds(org_db, keys = data$entrez, column = "SYMBOL", keytype = "ENTREZID", multiVals = "first")
     })
 
     data$ensembl <- entrez_to_ensembl[match(data$entrez, names(entrez_to_ensembl))]
